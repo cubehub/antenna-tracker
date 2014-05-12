@@ -9,12 +9,10 @@ import network_parser as hdlc;
 
 parser = argparse.ArgumentParser(description="Cubehub antenna tracker controller", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument("--port", type=str, default="/dev/tty.usbmodem621", help="usb serial port device eg. /dev/ttyUSB0")
-parser.add_argument("--motor", type=str, choices=["azimuth", "elevation"], help="to which motor command shall be sent")
-parser.add_argument("--set-position", type=int, help="sets motor position in degrees")
 args = parser.parse_args()
 
 s = serial.Serial(args.port, 115200, timeout=0.01);
-time.sleep(2.) # Arduino resets automatically if port is opened
+#time.sleep(2.) # Arduino resets automatically if port is opened
 
 s.flushInput()
 s.flushOutput()
@@ -46,8 +44,8 @@ def wait_ack():
     while 1:
         data = s.read(20)
         if data:
-            print 'raw in      : %s' % (data.encode('hex'))
-            print 'raw in ascii: %s' % (data)
+            #print 'raw in      : %s' % (data.encode('hex'))
+            #print 'raw in ascii: %s' % (data)
             parser.put(data)
 
         for packet in parser:
@@ -61,14 +59,32 @@ def wait_ack():
             print 'Error no ACK!'
             return False
 
+class ArgumentException(Exception):
+    pass
 
-if args.motor and args.set_position:
-    if "azimuth" in args.motor:
-        motor = AZIMUTH_STEPPER
-    elif "elevation" in args.motor:
-        motor = ELEVATION_STEPPER
-    set_position_packet = struct.pack("<BBh", CT_SET_POSITION, motor, args.set_position)
+class ArgumentParser(argparse.ArgumentParser):
 
-    send_packet(set_position_packet)
-    wait_ack()
+    def error(self, message):
+        ''' do exit in case of error, just show help again '''
+        self.print_usage()
+        raise ArgumentException
+
+p = ArgumentParser(prog="", add_help=False)
+p.add_argument("--motor", "-m", type=int, required=True, choices = [0,1], help="select which motor to control {0 - elevation, 1 - azimuth}")
+p.add_argument("--position", "-p", metavar="DEGREE", type=int, help="sets motor position in degrees")
+p.print_help()
+
+while 1:
+    arguments = raw_input('command: ')
+
+    try:
+        pargs = p.parse_args(arguments.split())
+    except ArgumentException:
+        continue
+
+    if pargs.position:
+        set_position_packet = struct.pack("<BBh", CT_SET_POSITION, pargs.motor, pargs.position)
+
+        send_packet(set_position_packet)
+        wait_ack()
 
