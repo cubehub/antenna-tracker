@@ -42,7 +42,6 @@ AZIMUTH_STEPPER = 1
 def send_packet(data):
     data = hdlc.add_checksum(data)
     data = hdlc.escape_delimit(data)
-    print 'out: %s' % (data.encode('hex'))
     s.write(data)
 
 def wait_ack():
@@ -51,20 +50,15 @@ def wait_ack():
     while 1:
         data = s.read(20)
         if data:
-            #print 'raw in      : %s' % (data.encode('hex'))
-            #print 'raw in ascii: %s' % (data)
             parser.put(data)
 
         for packet in parser:
-            print 'in: %s' % (packet.encode('hex'))
             header, status, line = struct.unpack("<BBH", packet[:4])
             if header == TC_ACK:
-                print 'ACK status %u, line %u' % (status, line)
-                return True
+                return True, 'ACK status %u, line %u' % (status, line)
 
         if time.time() - wait_ack_time > 0.1:
-            print 'Error no ACK!'
-            return False
+            return False, 'Error no ACK!'
 
 class ArgumentException(Exception):
     pass
@@ -73,7 +67,8 @@ class ArgumentParser(argparse.ArgumentParser):
 
     def error(self, message):
         ''' do exit in case of error, just show help again '''
-        self.print_usage()
+        #self.print_usage()
+        self._error_message = message
         raise ArgumentException
 
 p = ArgumentParser(prog="", add_help=False)
@@ -151,13 +146,18 @@ try:
                 pargs = p.parse_args(text.split())
                 text = ''
             except ArgumentException:
+                stdscr.addstr(9, 30, p._error_message)
                 continue
 
-            if pargs.position:
+            msg = ""
+            if pargs.position is not None:
                 set_position_packet = struct.pack("<BBh", CT_SET_POSITION, pargs.motor, pargs.position)
-
                 send_packet(set_position_packet)
-                wait_ack()
+                result, msg = wait_ack()
+
+            if msg:
+                msg = "| %s" % msg
+                stdscr.addstr(9, 30, msg)
 
             run_command = False
 
