@@ -8,6 +8,7 @@ import curses.textpad as textpad
 import serial
 
 import network_parser as hdlc;
+import tracker
 
 parser = argparse.ArgumentParser(description="Cubehub antenna tracker controller", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument("--port", type=str, default="/dev/tty.usbmodem621", help="usb serial port device eg. /dev/ttyUSB0")
@@ -37,6 +38,14 @@ CT_SET_MOTOR_STATE  = 0x04
 # motor defines
 ELEVATION_STEPPER = 0
 AZIMUTH_STEPPER = 1
+
+ec1_tle = { "name": "ESTCUBE 1", \
+            "tle1": "1 39161U 13021C   14067.20001811  .00002923  00000-0  49920-3 0  8912", \
+            "tle2": "2 39161  98.1033 148.8368 0010183   4.6175 355.5121 14.69656997 44765"}
+
+tallinn = ("59.4000", "24.8170", "0")
+
+tracker = tracker.Tracker(satellite=ec1_tle, groundstation=tallinn)
 
 def send_packet(data):
     data = hdlc.add_checksum(data)
@@ -82,22 +91,25 @@ p.add_argument("-m", dest='motor', type=int, choices = [0,1], help="select which
 p.add_argument("-p", dest='position', metavar="DEGREE", type=int, help="sets motor position in degrees")
 p.add_argument("-e", dest='enable', type=int, choices = [0,1], help="sets motor state {0 - off, 1 - on}")
 p.add_argument("-k", dest='keyboard', help="use arrow keys to control azimuth and elevation", action="store_true")
+p.add_argument("-t", dest='track', help="track automatically using TLE", action="store_true")
 
 commands = []
 command_index = 0
 run_command = False
 
+command_line_nr = 9
+
 try:
     text_before_cursor = "command: "
     text_offset = len(text_before_cursor)
-    cursor_position = [7, text_offset]
+    cursor_position = [command_line_nr, text_offset]
     stdscr.addstr(0, 0, p.format_help())
     text = ''
 
     while 1:
-        stdscr.move(7, 0)
+        stdscr.move(command_line_nr, 0)
         stdscr.clrtoeol()
-        stdscr.addstr(7, 0, "%s%s" % (text_before_cursor, text))
+        stdscr.addstr(command_line_nr, 0, "%s%s" % (text_before_cursor, text))
         stdscr.move(cursor_position[0], cursor_position[1])
 
         key = stdscr.getch()
@@ -114,9 +126,9 @@ try:
                         cursor_position[1] = text_offset
 
             elif key == 10: # enter
-                stdscr.move(8, 0)
+                stdscr.move(command_line_nr + 1, 0)
                 stdscr.insertln()
-                stdscr.addstr(9, text_offset, text)
+                stdscr.addstr(command_line_nr + 2, text_offset, text)
                 commands.insert(0, text)
                 command_index = -1
                 cursor_position[1] = text_offset
@@ -152,7 +164,7 @@ try:
                 pargs = p.parse_args(text.split())
                 text = ''
             except ArgumentException:
-                stdscr.addstr(9, 30, p._error_message)
+                stdscr.addstr(command_line_nr + 2, 30, p._error_message)
                 continue
 
             msg = ""
@@ -161,15 +173,34 @@ try:
                 set_position_packet = struct.pack("<BBBh", CT_SET_POSITION, pargs.motor, is_absolute, pargs.position)
                 send_packet(set_position_packet)
                 result, msg = wait_ack()
+
             elif pargs.enable is not None:
                 set_motor_state_packet = struct.pack("<BBB", CT_SET_MOTOR_STATE, pargs.motor, pargs.enable)
                 send_packet(set_motor_state_packet)
                 result, msg = wait_ack()
+
+            elif pargs.track:
+                stdscr.nodelay(1)
+                while 1:
+                    tracker.set_epoch(time.time())
+                    az = tracker.azimuth()
+                    elev = tracker.elevation()
+
+                    stdscr.move(command_line_nr + 2, 0)
+                    stdscr.clrtoeol()
+                    stdscr.addstr(command_line_nr + 2, text_offset, "azimuth %0.1f, elevation %0.1f, range %0.0f km" % (az, elev, tracker.range()/1000))
+
+                    key = stdscr.getch()
+                    if key == 27 or key == ord('q'):
+                        break
+
+                stdscr.nodelay(0)
+
             elif pargs.keyboard:
                 while 1:
-                    stdscr.move(7, 0)
+                    stdscr.move(command_line_nr, 0)
                     stdscr.clrtoeol()
-                    stdscr.addstr(7, 0, "%s%s" % (text_before_cursor, text))
+                    stdscr.addstr(command_line_nr, 0, "%s%s" % (text_before_cursor, text))
                     stdscr.move(cursor_position[0], cursor_position[1])
                     key = stdscr.getch()
                     msg = ""
@@ -191,15 +222,14 @@ try:
 
                         if msg:
                             msg = "| %s" % msg
-                            stdscr.move(9, 0)
+                            stdscr.move(command_line_nr + 2, 0)
                             stdscr.clrtoeol()
-                            stdscr.addstr(9, text_offset, command_description)
-                            stdscr.addstr(9, 30, msg)
-
+                            stdscr.addstr(command_line_nr + 2, text_offset, command_description)
+                            stdscr.addstr(command_line_nr + 2, 30, msg)
 
             if msg:
                 msg = "| %s" % msg
-                stdscr.addstr(9, 30, msg)
+                stdscr.addstr(command_line_nr + 2, 30, msg)
 
             run_command = False
 
