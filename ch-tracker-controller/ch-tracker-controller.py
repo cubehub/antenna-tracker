@@ -29,11 +29,10 @@ parser = hdlc.NetworkParserChecksummed()
 # packet types
 TC_ACK = 0x00
 
-CT_SET_CONFIG = 0x01
-CT_SET_POSITION = 0x02
-
-CT_GET_CONFIG = 0x03
-TC_CONFIG = 0x30
+CT_SET_POSITION     = 0x01
+CT_SET_MAX_SPEED    = 0x02
+CT_SET_ACCEL        = 0x03
+CT_SET_MOTOR_STATE  = 0x04
 
 # motor defines
 ELEVATION_STEPPER = 0
@@ -57,8 +56,15 @@ def wait_ack():
             if header == TC_ACK:
                 return True, 'ACK status %u, line %u' % (status, line)
 
-        if time.time() - wait_ack_time > 0.1:
+        if time.time() - wait_ack_time > 0.02:
             return False, 'Error no ACK!'
+
+def set_position_with_keyboard(motor=0, move_degrees=1):
+    absolute = 0
+    set_position_packet = struct.pack("<BBBh", CT_SET_POSITION, motor, absolute, move_degrees)
+    send_packet(set_position_packet)
+    result, msg = wait_ack()
+    return result, msg
 
 class ArgumentException(Exception):
     pass
@@ -74,17 +80,17 @@ class ArgumentParser(argparse.ArgumentParser):
 p = ArgumentParser(prog="", add_help=False)
 p.add_argument("-m", dest='motor', type=int, choices = [0,1], help="select which motor to control {0 - elevation, 1 - azimuth}")
 p.add_argument("-p", dest='position', metavar="DEGREE", type=int, help="sets motor position in degrees")
-#p.print_help()
-
+p.add_argument("-e", dest='enable', type=int, choices = [0,1], help="sets motor state {0 - off, 1 - on}")
+p.add_argument("-k", dest='keyboard', help="use arrow keys to control azimuth and elevation", action="store_true")
 
 commands = []
 command_index = 0
 run_command = False
 
-text_before_cursor = "command: "
-text_offset = len(text_before_cursor)
-cursor_position = [7, text_offset]
 try:
+    text_before_cursor = "command: "
+    text_offset = len(text_before_cursor)
+    cursor_position = [7, text_offset]
     stdscr.addstr(0, 0, p.format_help())
     text = ''
 
@@ -107,7 +113,7 @@ try:
                     if cursor_position[1] < text_offset:
                         cursor_position[1] = text_offset
 
-            elif key == 10:
+            elif key == 10: # enter
                 stdscr.move(8, 0)
                 stdscr.insertln()
                 stdscr.addstr(9, text_offset, text)
@@ -151,9 +157,45 @@ try:
 
             msg = ""
             if pargs.position is not None:
-                set_position_packet = struct.pack("<BBh", CT_SET_POSITION, pargs.motor, pargs.position)
+                is_absolute = 1
+                set_position_packet = struct.pack("<BBBh", CT_SET_POSITION, pargs.motor, is_absolute, pargs.position)
                 send_packet(set_position_packet)
                 result, msg = wait_ack()
+            elif pargs.enable is not None:
+                set_motor_state_packet = struct.pack("<BBB", CT_SET_MOTOR_STATE, pargs.motor, pargs.enable)
+                send_packet(set_motor_state_packet)
+                result, msg = wait_ack()
+            elif pargs.keyboard:
+                while 1:
+                    stdscr.move(7, 0)
+                    stdscr.clrtoeol()
+                    stdscr.addstr(7, 0, "%s%s" % (text_before_cursor, text))
+                    stdscr.move(cursor_position[0], cursor_position[1])
+                    key = stdscr.getch()
+                    msg = ""
+                    if key != -1:
+                        if key == curses.KEY_UP:
+                            result, msg = set_position_with_keyboard(ELEVATION_STEPPER, move_degrees=1)
+                            command_description = "up"
+                        elif key == curses.KEY_DOWN:
+                            result, msg = set_position_with_keyboard(ELEVATION_STEPPER, move_degrees=-1)
+                            command_description = "down"
+                        elif key == curses.KEY_LEFT:
+                            result, msg = set_position_with_keyboard(AZIMUTH_STEPPER, move_degrees=1)
+                            command_description = "left"
+                        elif key == curses.KEY_RIGHT:
+                            result, msg = set_position_with_keyboard(AZIMUTH_STEPPER, move_degrees=-1)
+                            command_description = "right"
+                        elif key == 27 or key == ord('q'):
+                            break
+
+                        if msg:
+                            msg = "| %s" % msg
+                            stdscr.move(9, 0)
+                            stdscr.clrtoeol()
+                            stdscr.addstr(9, text_offset, command_description)
+                            stdscr.addstr(9, 30, msg)
+
 
             if msg:
                 msg = "| %s" % msg
