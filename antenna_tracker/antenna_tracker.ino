@@ -134,7 +134,7 @@ void setup() {
 	digitalWrite(ELEVATION_STEPPER_SLEEP, HIGH);
 	digitalWrite(ELEVATION_STEPPER_RESET, HIGH);
 
-	ElevationStepper.setMaxSpeed(400.0);
+	ElevationStepper.setMaxSpeed(1000.0);
 	ElevationStepper.setAcceleration(2000.0);
 
 	// setup azimuth stepper
@@ -148,7 +148,7 @@ void setup() {
 	digitalWrite(AZIMUTH_STEPPER_SLEEP, HIGH);
 	digitalWrite(AZIMUTH_STEPPER_RESET, HIGH);
 
-	AzimuthStepper.setMaxSpeed(8000.0);
+	AzimuthStepper.setMaxSpeed(1000.0);
 	AzimuthStepper.setAcceleration(2000.0);
 
 	Serial.begin(115200);
