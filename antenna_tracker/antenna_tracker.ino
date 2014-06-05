@@ -41,17 +41,26 @@ HDLC hdlc(m_rx_buffer, 20);
 enum {
 	TC_ACK = 0x00,
 
-	CT_SET_CONFIG = 0x01,
-	CT_SET_POSITION = 0x02,
+	CT_SET_POSITION 	= 0x01,
+	CT_SET_MAX_SPEED 	= 0x02,
+	CT_SET_ACCEL 		= 0x03,
+	CT_SET_MOTOR_STATE 	= 0x04,
 
-	CT_GET_CONFIG = 0x03,
-	TC_CONFIG = 0x30
+	CT_GET_MAX_SPEED 	= 0x20,
+	CT_GET_ACCEL 		= 0x30,
+	CT_GET_MOTOR_STATE 	= 0x40
+};
+
+enum {
+	MOTOR_STATE_OFF = 0,
+	MOTOR_STATE_ON = 1
 };
 
 enum {
 	ACK_STATUS_SUCCESS = 0,
 	ACK_STATUS_FAIL
 };
+
 typedef struct {
 	uint8_t type; // TC_ACK
 	uint8_t status;
@@ -61,31 +70,27 @@ typedef struct {
 typedef struct {
 	uint8_t type; // CT_SET_POSITION
 	uint8_t motor; // 0 - elevation, 1 - azimuth
+	bool is_absolute;
 	int16_t degrees;
 } set_position_packet_t __attribute__((packed));
 
 typedef struct {
-	uint8_t type; // CT_SET_CONFIG
+	uint8_t type; // CT_SET_MAX_SPEED
 	uint8_t motor; // 0 - elevation, 1 - azimuth
-	bool	motor_state; // 0 off, 1 on
-	uint16_t max_speed;
-	uint16_t acceleration;
-	int16_t current_steps;
-} set_config_packet_t __attribute__((packed));
+	uint16_t maxspeed;
+} set_max_speed_packet_t __attribute__((packed));
 
 typedef struct {
-	uint8_t type; // CT_GET_CONFIG
+	uint8_t type; // CT_SET_MOTOR_STATE
 	uint8_t motor; // 0 - elevation, 1 - azimuth
-} get_config_packet_t __attribute__((packed));
+	bool accel;
+} set_accel_packet_t __attribute__((packed));
 
 typedef struct {
-	uint8_t type; // TC_CONFIG
+	uint8_t type; // CT_SET_ACCEL
 	uint8_t motor; // 0 - elevation, 1 - azimuth
-	uint16_t max_speed;
-	uint16_t acceleration;
-	int16_t current_steps;
-	int16_t current_degrees;
-} config_packet_t __attribute__((packed));
+	bool state; // 0 - off, 1 - on
+} set_motor_state_packet_t __attribute__((packed));
 
 ack_packet_t ack_packet;
 
@@ -160,17 +165,76 @@ void loop() {
 		if (m_rx_len > 0) {
 			uint8_t type = ((uint8_t*)m_rx_buffer)[0];
 
-			if (CT_SET_CONFIG == type) {
-
-			}
-			else if (CT_SET_POSITION == type) {
-				set_position_packet_t* set_position_p = (set_position_packet_t*)m_rx_buffer;
-				if (set_position_p->motor == ELEVATION_STEPPER) {
-					ElevationStepper.moveTo(degrees_to_elevation_steps(set_position_p->degrees));
+			if (CT_SET_POSITION == type) {
+				set_position_packet_t* position_p = (set_position_packet_t*)m_rx_buffer;
+				if (position_p->motor == ELEVATION_STEPPER) {
+					if (position_p->is_absolute) {
+						ElevationStepper.moveTo(degrees_to_elevation_steps(position_p->degrees));
+					}
+					else {
+						ElevationStepper.move(degrees_to_elevation_steps(position_p->degrees));
+					}
 					send_ack(ACK_STATUS_SUCCESS, __LINE__);
 				}
-				else if (set_position_p->motor == AZIMUTH_STEPPER) {
-					AzimuthStepper.moveTo(degrees_to_azimuth_steps(set_position_p->degrees));
+				else if (position_p->motor == AZIMUTH_STEPPER) {
+					if (position_p->is_absolute) {
+						AzimuthStepper.moveTo(degrees_to_azimuth_steps(position_p->degrees));
+					}
+					else {
+						AzimuthStepper.move(degrees_to_azimuth_steps(position_p->degrees));
+					}
+					send_ack(ACK_STATUS_SUCCESS, __LINE__);
+				}
+				else {
+					send_ack(ACK_STATUS_FAIL, __LINE__);
+				}
+			}
+			else if (CT_SET_MAX_SPEED == type) {
+				set_max_speed_packet_t* max_speed_p = (set_max_speed_packet_t*)m_rx_buffer;
+				if (max_speed_p->motor == ELEVATION_STEPPER) {
+					ElevationStepper.setMaxSpeed(max_speed_p->maxspeed);
+					send_ack(ACK_STATUS_SUCCESS, __LINE__);
+				}
+				else if (max_speed_p->motor == AZIMUTH_STEPPER) {
+					AzimuthStepper.setMaxSpeed(max_speed_p->maxspeed);
+					send_ack(ACK_STATUS_SUCCESS, __LINE__);
+				}
+				else {
+					send_ack(ACK_STATUS_FAIL, __LINE__);
+				}
+			}
+			else if (CT_SET_ACCEL == type) {
+				set_accel_packet_t* accel_p = (set_accel_packet_t*)m_rx_buffer;
+				if (accel_p->motor == ELEVATION_STEPPER) {
+					ElevationStepper.setAcceleration(accel_p->accel);
+					send_ack(ACK_STATUS_SUCCESS, __LINE__);
+				}
+				else if (accel_p->motor == AZIMUTH_STEPPER) {
+					AzimuthStepper.setAcceleration(accel_p->accel);
+					send_ack(ACK_STATUS_SUCCESS, __LINE__);
+				}
+				else {
+					send_ack(ACK_STATUS_FAIL, __LINE__);
+				}
+			}
+			else if (CT_SET_MOTOR_STATE == type) {
+				set_motor_state_packet_t* state_p = (set_motor_state_packet_t*)m_rx_buffer;
+				if (state_p->motor == ELEVATION_STEPPER) {
+					if (state_p->state == MOTOR_STATE_ON) {
+						digitalWrite(ELEVATION_STEPPER_ENABLE, LOW);
+					}
+					else {
+						digitalWrite(ELEVATION_STEPPER_ENABLE, HIGH);
+					}
+					send_ack(ACK_STATUS_SUCCESS, __LINE__);
+				}
+				else if (state_p->motor == AZIMUTH_STEPPER) {
+					if (state_p->state == MOTOR_STATE_ON) {
+						digitalWrite(AZIMUTH_STEPPER_ENABLE, LOW);
+					}
+					else {
+						digitalWrite(AZIMUTH_STEPPER_ENABLE, HIGH);
+					}
 					send_ack(ACK_STATUS_SUCCESS, __LINE__);
 				}
 				else {
@@ -183,8 +247,7 @@ void loop() {
 		}
 	}
 
-	//ElevationStepper.moveTo(degrees_to_steps(m_degrees));
-	ElevationStepper.run(); // for accel/deccel
 	//ElevationStepper.runSpeed(); // for const speed
+	ElevationStepper.run(); // for accel/deccel
 	AzimuthStepper.run();
 }
