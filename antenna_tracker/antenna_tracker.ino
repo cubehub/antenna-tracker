@@ -71,7 +71,7 @@ typedef struct {
 	uint8_t type; // CT_SET_POSITION
 	uint8_t motor; // 0 - elevation, 1 - azimuth
 	bool is_absolute;
-	int16_t degrees;
+	int16_t scale_10_degrees;
 } set_position_packet_t __attribute__((packed));
 
 typedef struct {
@@ -102,12 +102,13 @@ void send_ack(uint8_t status, uint16_t line_nr) {
 	Serial.write(m_tx_buffer, m_tx_len);
 }
 
-int16_t degrees_to_elevation_steps(int16_t degrees) {
-	return ((int16_t)degrees * 10000L) / 938L; // 1.8/19.19 = 0.0938 degrees per step
+int16_t degrees_to_elevation_steps(int16_t scale_10_degrees) {
+	// if 45.5 is wanted use 455 for scale_10_degrees arg
+	return ((int16_t)scale_10_degrees * 1000L) / 938L; // 1.8/19.19 = 0.0938 degrees per step
 }
 
-int16_t degrees_to_azimuth_steps(int16_t degrees) {
-	return ((int16_t)degrees * 10000L) / 3475L; // 1.8/5.18 = 0.3475 degrees per step
+int16_t degrees_to_azimuth_steps(int16_t scale_10_degrees) {
+	return ((int16_t)scale_10_degrees * 1000L) / 3475L; // 1.8/5.18 = 0.3475 degrees per step
 }
 
 void toggle_led() {
@@ -135,7 +136,7 @@ void setup() {
 	digitalWrite(ELEVATION_STEPPER_RESET, HIGH);
 
 	ElevationStepper.setMaxSpeed(1000.0);
-	ElevationStepper.setAcceleration(2000.0);
+	ElevationStepper.setAcceleration(500.0);
 
 	// setup azimuth stepper
 	pinMode(AZIMUTH_STEPPER_ENABLE, OUTPUT);
@@ -149,7 +150,7 @@ void setup() {
 	digitalWrite(AZIMUTH_STEPPER_RESET, HIGH);
 
 	AzimuthStepper.setMaxSpeed(1000.0);
-	AzimuthStepper.setAcceleration(2000.0);
+	AzimuthStepper.setAcceleration(500.0);
 
 	Serial.begin(115200);
 	Serial.println("reset");
@@ -169,19 +170,19 @@ void loop() {
 				set_position_packet_t* position_p = (set_position_packet_t*)m_rx_buffer;
 				if (position_p->motor == ELEVATION_STEPPER) {
 					if (position_p->is_absolute) {
-						ElevationStepper.moveTo(degrees_to_elevation_steps(position_p->degrees));
+						ElevationStepper.moveTo(degrees_to_elevation_steps(position_p->scale_10_degrees));
 					}
 					else {
-						ElevationStepper.move(degrees_to_elevation_steps(position_p->degrees));
+						ElevationStepper.move(degrees_to_elevation_steps(position_p->scale_10_degrees));
 					}
 					send_ack(ACK_STATUS_SUCCESS, __LINE__);
 				}
 				else if (position_p->motor == AZIMUTH_STEPPER) {
 					if (position_p->is_absolute) {
-						AzimuthStepper.moveTo(degrees_to_azimuth_steps(position_p->degrees));
+						AzimuthStepper.moveTo(degrees_to_azimuth_steps(position_p->scale_10_degrees));
 					}
 					else {
-						AzimuthStepper.move(degrees_to_azimuth_steps(position_p->degrees));
+						AzimuthStepper.move(degrees_to_azimuth_steps(position_p->scale_10_degrees));
 					}
 					send_ack(ACK_STATUS_SUCCESS, __LINE__);
 				}
