@@ -85,14 +85,14 @@ class Tracker():
 
 
 
-'''
-tracker = Tracker(satellite=ec1_tle, groundstation=tallinn)
+if __name__ == "__main__":
+    tracker = Tracker(satellite=ec1_tle, groundstation=tallinn)
 
-while 1:
-    tracker.set_epoch(time.time())
-    print "az   : %0.1f" % tracker.azimuth()
-    print "ele  : %0.1f" % tracker.elevation()
-    print "range: %0.0f km" % (tracker.range()/1000)
+    while 1:
+        tracker.set_epoch(time.time())
+        print "az   : %0.1f" % tracker.azimuth()
+        print "ele  : %0.1f" % tracker.elevation()
+        print "range: %0.0f km" % (tracker.range()/1000)
 
-    time.sleep(0.5)
-'''
+        time.sleep(0.5)
+
